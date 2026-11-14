@@ -28,6 +28,7 @@
 #include "etc-internal.h"
 
 class SceneElement;
+class CustomShader;
 class Viewport;
 class WindowVX;
 class Window;
@@ -58,6 +59,8 @@ public:
 	virtual void requestViewportRender(const Vec4& /* color */,
 	                                   const Vec4& /* flash */,
 	                                   const Vec4& /* tone */) {}
+	/* Redraw the area under the current scissor box through a game shader */
+	virtual void requestViewportShader(CustomShader& /* shader */) {}
 
 	const Geometry &getGeometry() const { return geometry; }
 

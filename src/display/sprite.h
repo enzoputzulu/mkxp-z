@@ -29,6 +29,7 @@
 #include "util.h"
 
 class Bitmap;
+class CustomShader;
 struct Color;
 struct Tone;
 struct Rect;
@@ -63,6 +64,7 @@ public:
 	DECL_ATTR( Color,       Color&  )
 	DECL_ATTR( Tone,        Tone&   )
     DECL_ATTR( Pattern,     Bitmap* )
+    DECL_ATTR( Shader,      CustomShader* )
     DECL_ATTR( PatternBlendType, int)
     DECL_ATTR( PatternTile, bool    )
     DECL_ATTR( PatternOpacity, int  )

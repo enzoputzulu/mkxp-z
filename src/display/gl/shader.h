@@ -27,6 +27,11 @@
 #include "glstate.h"
 
 class ShaderNoConstructTag {};
+#include <map>
+#include <string>
+#include <vector>
+
+class Bitmap;
 
 class Shader
 {
@@ -442,6 +447,57 @@ public:
 
 protected:
 	GLint u_targetScale;
+};
+
+/* Shader written by the game (Ruby class Shader).
+ * The engine supplies the vertex stage; the game supplies the fragment stage,
+ * which receives:
+ *   uniform sampler2D texture;  the viewport contents or the sprite bitmap
+ *   varying vec2 v_texCoord;    normalized coordinates into 'texture'
+ *   varying vec2 v_pos;         the same position in pixels (y down)
+ *   uniform vec2 size;          size of 'texture' in pixels (if declared)
+ *   uniform float opacity;      sprite opacity, 1.0 for viewports (if declared)
+ *   uniform vec4 tone, color;   sprite tone and color, normalized (if declared)
+ * plus any float/vec2/vec3/vec4 uniform, uniform array and sampler2D the game
+ * sets by name. Values are kept here and uploaded each time the shader draws. */
+class CustomShader : public ShaderBase
+{
+public:
+	CustomShader(const std::string &fragSource);
+
+	/* 'comps' floats per element (1 to 4), 'count' elements */
+	void setFloats(const std::string &name, int comps, int count, const float *values);
+	void setTexture(const std::string &name, Bitmap *bitmap);
+
+	void setSpriteMat(const float value[16]);
+	void setIdentitySpriteMat();
+	void setSize(const Vec2 &value);
+	void setSpriteEffects(float opacity, const Vec4 &tone, const Vec4 &color);
+
+	/* Upload stored values and bind extra textures (shader must be bound) */
+	void applyValues();
+
+private:
+	struct Value
+	{
+		int comps;
+		int count;
+		std::vector<float> data;
+		GLint loc;
+		bool resolved;
+	};
+
+	struct Texture
+	{
+		Bitmap *bitmap;
+		GLint loc;
+		bool resolved;
+	};
+
+	std::map<std::string, Value> values;
+	std::map<std::string, Texture> textures;
+
+	GLint u_spriteMat, u_size, u_opacity, u_tone, u_color;
 };
 
 /* Global object containing all available shaders */

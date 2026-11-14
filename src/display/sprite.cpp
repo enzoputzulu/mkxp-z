@@ -86,6 +86,9 @@ struct SpritePrivate
     BlendType blendType;
     
     Bitmap *pattern;
+    
+    /* Game shader that draws this sprite, owned by Ruby */
+    CustomShader *shader;
     BlendType patternBlendType;
     bool patternTile;
     NormValue patternOpacity;
@@ -142,6 +145,7 @@ struct SpritePrivate
     opacity(255),
     blendType(BlendNormal),
     pattern(0),
+    shader(0),
     patternTile(true),
     patternOpacity(255),
     invert(false),
@@ -859,6 +863,20 @@ void Sprite::setBlendType(int type)
     }
 }
 
+CustomShader *Sprite::getShader() const
+{
+    guardDisposed();
+    
+    return p->shader;
+}
+
+void Sprite::setShader(CustomShader *value)
+{
+    guardDisposed();
+    
+    p->shader = value;
+}
+
 void Sprite::setPattern(Bitmap *value)
 {
     guardDisposed();
@@ -998,7 +1016,30 @@ void Sprite::draw()
         scalingMethod = shState->config().bitmapSmoothScaling;
     }
 
-    if (renderEffect)
+    if (p->shader)
+    {
+        /* The game shader replaces the built-in effects: it receives the
+         * sprite opacity, tone and color and decides what to do with them */
+        CustomShader &shader = *p->shader;
+        
+        if (scalingMethod != NearestNeighbor && scalingMethod != Bilinear)
+            scalingMethod = NearestNeighbor;
+        
+        shader.bind();
+        shader.applyViewportProj();
+        shader.setSpriteMat(p->trans.getMatrix());
+        shader.setTranslation(Vec2i());
+        shader.setSize(Vec2(p->bitmap->width(), p->bitmap->height()));
+        
+        const Vec4 *blend = (flashing && flashColor.w > p->color->norm.w) ?
+        &flashColor : &p->color->norm;
+        
+        shader.setSpriteEffects(p->opacity.norm, p->tone->norm, *blend);
+        shader.applyValues();
+        
+        base = &shader;
+    }
+    else if (renderEffect)
     {
         if (scalingMethod != NearestNeighbor)
         {
