@@ -28,6 +28,7 @@
 #include "util.h"
 
 struct ViewportPrivate;
+class CustomShader;
 
 class Viewport : public Scene, public SceneElement, public Flashable, public Disposable
 {
@@ -44,6 +45,7 @@ public:
 	DECL_ATTR( OY,    int    )
 	DECL_ATTR( Color, Color& )
 	DECL_ATTR( Tone,  Tone&  )
+	DECL_ATTR( Shader, CustomShader* )
 
 	void initDynAttribs();
 

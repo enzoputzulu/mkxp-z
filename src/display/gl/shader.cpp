@@ -23,6 +23,7 @@
 #include "sharedstate.h"
 #include "glstate.h"
 #include "exception.h"
+#include "bitmap.h"
 
 #include <assert.h>
 #include <string.h>
@@ -79,7 +80,7 @@
     std::string Shader::shaderCommon = "";
 #endif
 
-static void printShaderLog(GLuint shader)
+static std::string printShaderLog(GLuint shader)
 {
 	GLint logLength;
 	gl.GetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
@@ -88,6 +89,8 @@ static void printShaderLog(GLuint shader)
 	gl.GetShaderInfoLog(shader, log.size(), 0, &log[0]);
 
 	std::clog << "Shader log:\n" << log;
+
+	return log.c_str();
 }
 
 static void printProgramLog(GLuint program)
@@ -207,10 +210,10 @@ void Shader::init(const unsigned char *vert, int vertSize,
 
 	if (!success)
 	{
-		printShaderLog(fragShader);
+		std::string log = printShaderLog(fragShader);
 		throw Exception(Exception::MKXPError,
-	                    "GLSL: An error occured while compiling fragment shader '%s' in program '%s'",
-	                    fragName, programName);
+	                    "GLSL: An error occured while compiling fragment shader '%s' in program '%s':\n%s",
+	                    fragName, programName, log.c_str());
 	}
 
 	/* Link shader program */
@@ -762,4 +765,140 @@ void Lanczos3Shader::setTexSize(const Vec2i &value)
 {
 	ShaderBase::setTexSize(value);
 	gl.Uniform2f(u_sourceSize, (float)value.x, (float)value.y);
+}
+
+
+/* Vertex stage shared by every CustomShader: works for viewports
+ * (spriteMat = identity, quad in screen pixels) and for sprites. */
+static const char customVert[] =
+	"uniform mat4 projMat;\n"
+	"uniform mat4 spriteMat;\n"
+	"uniform vec2 texSizeInv;\n"
+	"uniform vec2 translation;\n"
+	"attribute vec2 position;\n"
+	"attribute vec2 texCoord;\n"
+	"varying vec2 v_texCoord;\n"
+	"varying vec2 v_pos;\n"
+	"void main()\n"
+	"{\n"
+	"	gl_Position = projMat * spriteMat * vec4(position + translation, 0, 1);\n"
+	"	v_texCoord = texCoord * texSizeInv;\n"
+	"	v_pos = texCoord;\n"
+	"}\n";
+
+CustomShader::CustomShader(const std::string &fragSource)
+{
+	Shader::init((const unsigned char*) customVert, sizeof(customVert) - 1,
+	             (const unsigned char*) fragSource.c_str(), fragSource.size(),
+	             "custom.vert", "Shader", "CustomShader");
+
+	ShaderBase::init();
+
+	GET_U(spriteMat);
+	GET_U(size);
+	GET_U(opacity);
+	GET_U(tone);
+	GET_U(color);
+}
+
+void CustomShader::setFloats(const std::string &name, int comps, int count, const float *values_)
+{
+	Value &v = values[name];
+
+	if (v.comps != comps || v.count != count)
+		v.resolved = false;
+
+	v.comps = comps;
+	v.count = count;
+	v.data.assign(values_, values_ + comps * count);
+}
+
+void CustomShader::setTexture(const std::string &name, Bitmap *bitmap)
+{
+	if (!bitmap)
+	{
+		textures.erase(name);
+		return;
+	}
+
+	Texture &t = textures[name];
+	t.bitmap = bitmap;
+}
+
+void CustomShader::setSpriteMat(const float value[16])
+{
+	gl.UniformMatrix4fv(u_spriteMat, 1, GL_FALSE, value);
+}
+
+void CustomShader::setIdentitySpriteMat()
+{
+	static const float identity[16] =
+	{
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1
+	};
+
+	setSpriteMat(identity);
+}
+
+void CustomShader::setSize(const Vec2 &value)
+{
+	if (u_size >= 0)
+		setVec2Uniform(u_size, value);
+}
+
+void CustomShader::setSpriteEffects(float opacity, const Vec4 &tone, const Vec4 &color)
+{
+	if (u_opacity >= 0)
+		gl.Uniform1f(u_opacity, opacity);
+	if (u_tone >= 0)
+		setVec4Uniform(u_tone, tone);
+	if (u_color >= 0)
+		setVec4Uniform(u_color, color);
+}
+
+void CustomShader::applyValues()
+{
+	for (std::map<std::string, Value>::iterator it = values.begin(); it != values.end(); ++it)
+	{
+		Value &v = it->second;
+
+		if (!v.resolved)
+		{
+			v.loc = gl.GetUniformLocation(program, it->first.c_str());
+			v.resolved = true;
+		}
+
+		if (v.loc < 0 || v.data.empty())
+			continue;
+
+		switch (v.comps)
+		{
+		case 1: gl.Uniform1fv(v.loc, v.count, &v.data[0]); break;
+		case 2: gl.Uniform2fv(v.loc, v.count, &v.data[0]); break;
+		case 3: gl.Uniform3fv(v.loc, v.count, &v.data[0]); break;
+		case 4: gl.Uniform4fv(v.loc, v.count, &v.data[0]); break;
+		}
+	}
+
+	/* Unit 0 is the drawn texture; extra textures start at unit 1 */
+	unsigned unit = 1;
+
+	for (std::map<std::string, Texture>::iterator it = textures.begin(); it != textures.end(); ++it)
+	{
+		Texture &t = it->second;
+
+		if (!t.resolved)
+		{
+			t.loc = gl.GetUniformLocation(program, it->first.c_str());
+			t.resolved = true;
+		}
+
+		if (t.loc < 0 || !t.bitmap || t.bitmap->isDisposed() || t.bitmap->isMega())
+			continue;
+
+		setTexUniform(t.loc, unit++, t.bitmap->getGLTypes().tex);
+	}
 }

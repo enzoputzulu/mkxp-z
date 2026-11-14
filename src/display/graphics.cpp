@@ -522,6 +522,42 @@ public:
         }
     }
     
+    void requestViewportShader(CustomShader &shader) {
+        const IntRect &viewpRect = glState.scissorBox.get();
+        const IntRect &screenRect = geometry.rect;
+        
+        /* Same path as the gray tone: the viewport contents drawn so far
+         * become the source texture of a full screen pass, clipped to the
+         * viewport by the scissor box */
+        pp.swapRender();
+        
+        if (!viewpRect.encloses(screenRect)) {
+            glState.scissorTest.pushSet(false);
+            
+            GLMeta::blitBegin(pp.frontBuffer());
+            GLMeta::blitSource(pp.backBuffer());
+            GLMeta::blitRectangle(geometry.rect, Vec2i());
+            GLMeta::blitEnd();
+            
+            glState.scissorTest.pop();
+        }
+        
+        shader.bind();
+        shader.applyViewportProj();
+        shader.setTexSize(screenRect.size());
+        shader.setTranslation(Vec2i());
+        shader.setIdentitySpriteMat();
+        shader.setSize(Vec2(screenRect.w, screenRect.h));
+        shader.setSpriteEffects(1.0f, Vec4(), Vec4());
+        shader.applyValues();
+        
+        TEX::bind(pp.backBuffer().tex);
+        
+        glState.blend.pushSet(false);
+        screenQuad.draw();
+        glState.blend.pop();
+    }
+    
     void requestViewportRender(const Vec4 &c, const Vec4 &f, const Vec4 &t) {
         const IntRect &viewpRect = glState.scissorBox.get();
         const IntRect &screenRect = geometry.rect;

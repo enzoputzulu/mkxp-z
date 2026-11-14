@@ -43,6 +43,9 @@ struct ViewportPrivate
 	Color *color;
 	Tone *tone;
 
+	/* Game shader applied to the viewport contents, owned by Ruby */
+	CustomShader *shader;
+
 	IntRect screenRect;
 	int isOnScreen;
 
@@ -53,6 +56,7 @@ struct ViewportPrivate
 	      rect(&tmp.rect),
 	      color(&tmp.color),
 	      tone(&tmp.tone),
+	      shader(0),
 	      isOnScreen(false)
 	{
 		rect->set(x, y, width, height);
@@ -88,6 +92,11 @@ struct ViewportPrivate
 
 		SDL_Rect result;
 		isOnScreen = SDL_IntersectRect(&r1, &r2, &result);
+	}
+
+	bool needsShaderRender()
+	{
+		return shader && !rect->isEmpty() && isOnScreen;
 	}
 
 	bool needsEffectRender(bool flashing)
@@ -151,6 +160,20 @@ DEF_ATTR_SIMPLE(Viewport, Rect,  Rect&,  *p->rect)
 DEF_ATTR_SIMPLE(Viewport, Color, Color&, *p->color)
 DEF_ATTR_SIMPLE(Viewport, Tone,  Tone&,  *p->tone)
 
+CustomShader *Viewport::getShader() const
+{
+	guardDisposed();
+
+	return p->shader;
+}
+
+void Viewport::setShader(CustomShader *value)
+{
+	guardDisposed();
+
+	p->shader = value;
+}
+
 void Viewport::setOX(int value)
 {
 	guardDisposed();
@@ -189,8 +212,9 @@ void Viewport::composite()
 		return;
 
 	bool renderEffect = p->needsEffectRender(flashing);
+	bool renderShader = p->needsShaderRender();
 
-	if (elements.getSize() == 0 && !renderEffect)
+	if (elements.getSize() == 0 && !renderEffect && !renderShader)
 		return;
 
 	/* Setup scissor */
@@ -198,6 +222,11 @@ void Viewport::composite()
 	glState.scissorBox.pushSet(p->rect->toIntRect());
 
 	Scene::composite();
+
+	/* The game shader runs first; tone, color and flash then apply
+	 * on top of its result, as they do on the plain contents */
+	if (renderShader)
+		scene->requestViewportShader(*p->shader);
 
 	/* If any effects are visible, request parent Scene to
 	 * render them. */
