@@ -14,7 +14,8 @@ BINDIR := $(BUILD_PREFIX)/bin
 INCLUDEDIR := $(BUILD_PREFIX)/include
 DOWNLOADS := ${PWD}/downloads/$(ARCH)
 NPROC := $(shell nproc)
-CFLAGS := -I$(INCLUDEDIR) -O3
+# Au nom de demain : la chaîne MSYS2 d'aujourd'hui (GCC 15, C23 par défaut) refuse le C ancien de certaines dépendances
+CFLAGS := -I$(INCLUDEDIR) -O3 -std=gnu17 -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration -Wno-error=int-conversion
 LDFLAGS := -L$(LIBDIR)
 CC      := gcc
 PKG_CONFIG_LIBDIR := $(BUILD_PREFIX)/lib/pkgconfig
