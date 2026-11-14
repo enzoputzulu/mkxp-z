@@ -93,7 +93,7 @@ static std::string printShaderLog(GLuint shader)
 	return log.c_str();
 }
 
-static void printProgramLog(GLuint program)
+static std::string printProgramLog(GLuint program)
 {
 	GLint logLength;
 	gl.GetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
@@ -102,6 +102,20 @@ static void printProgramLog(GLuint program)
 	gl.GetProgramInfoLog(program, log.size(), 0, &log[0]);
 
 	std::clog << "Program log:\n" << log;
+
+	return log.c_str();
+}
+
+/* An MKXPError carrying the whole GLSL log: Exception's own formatting
+ * stops at 512 bytes, which cuts a compiler log short. */
+static Exception glslError(const std::string &head, const std::string &log)
+{
+	Exception e(Exception::MKXPError, "%s", head.c_str());
+	e.msg.resize(strlen(e.msg.c_str()));
+	if (!log.empty())
+		e.msg += ":\n" + log;
+
+	return e;
 }
 
 Shader::Shader()
@@ -118,7 +132,11 @@ Shader::Shader()
 
 Shader::~Shader()
 {
-	gl.UseProgram(0);
+	/* Go through the cached state: a raw glUseProgram(0) would leave
+	 * glState.program pointing at a program that is no longer bound,
+	 * and the next bind() of that program would be skipped. */
+	if (glState.program.get() == program)
+		glState.program.set(0);
 	gl.DeleteProgram(program);
 	gl.DeleteShader(vertShader);
 	gl.DeleteShader(fragShader);
@@ -211,9 +229,8 @@ void Shader::init(const unsigned char *vert, int vertSize,
 	if (!success)
 	{
 		std::string log = printShaderLog(fragShader);
-		throw Exception(Exception::MKXPError,
-	                    "GLSL: An error occured while compiling fragment shader '%s' in program '%s':\n%s",
-	                    fragName, programName, log.c_str());
+		throw glslError(std::string("GLSL: An error occured while compiling fragment shader '") +
+		                fragName + "' in program '" + programName + "'", log);
 	}
 
 	/* Link shader program */
@@ -230,10 +247,9 @@ void Shader::init(const unsigned char *vert, int vertSize,
 
 	if (!success)
 	{
-		printProgramLog(program);
-		throw Exception(Exception::MKXPError,
-	                    "GLSL: An error occured while linking program '%s' (vertex '%s', fragment '%s')",
-	                    programName, vertName, fragName);
+		std::string log = printProgramLog(program);
+		throw glslError(std::string("GLSL: An error occured while linking program '") + programName +
+		                "' (vertex '" + vertName + "', fragment '" + fragName + "')", log);
 	}
 }
 
@@ -815,12 +831,9 @@ void CustomShader::setFloats(const std::string &name, int comps, int count, cons
 
 void CustomShader::setTexture(const std::string &name, Bitmap *bitmap)
 {
-	if (!bitmap)
-	{
-		textures.erase(name);
-		return;
-	}
-
+	/* A removed texture keeps its entry (and its texture unit), bound to
+	 * nothing: erasing it would shift the units of the other samplers and
+	 * leave this sampler reading whatever its old unit still holds. */
 	Texture &t = textures[name];
 	t.bitmap = bitmap;
 }
@@ -896,9 +909,12 @@ void CustomShader::applyValues()
 			t.resolved = true;
 		}
 
-		if (t.loc < 0 || !t.bitmap || t.bitmap->isDisposed() || t.bitmap->isMega())
+		if (t.loc < 0)
 			continue;
 
-		setTexUniform(t.loc, unit++, t.bitmap->getGLTypes().tex);
+		/* Removed or disposed bitmap: texture 0 (samples black), never a
+		 * stale texture that the pool may have handed to another bitmap */
+		bool usable = t.bitmap && !t.bitmap->isDisposed() && !t.bitmap->isMega();
+		setTexUniform(t.loc, unit++, usable ? t.bitmap->getGLTypes().tex : TEX::ID(0));
 	}
 }
