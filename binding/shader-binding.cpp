@@ -38,38 +38,99 @@
 #include <string>
 #include <vector>
 
+/* The GL objects of a shader are deleted when Ruby frees it: hold the
+ * graphics lock, as the setters do (it also makes the GL context current
+ * on the thread that runs the garbage collector). */
+static void freeShader(void *inst)
+{
+    GFX_LOCK;
+    delete static_cast<CustomShader *>(inst);
+    GFX_UNLOCK;
+}
+
 #if RAPI_FULL > 187
-DEF_TYPE_CUSTOMNAME(CustomShader, "Shader");
+DEF_TYPE_CUSTOMNAME_AND_FREE(CustomShader, "Shader", freeShader);
 #else
-DEF_ALLOCFUNC(CustomShader);
+DEF_ALLOCFUNC_CUSTOMFREE(CustomShader, freeShader);
 #endif
 
 static const int MAX_ARRAY_FLOATS = 1024;
 
-static std::string stringArg(VALUE v, int pos)
+/* Every argument is checked before a C++ object (std::string,
+ * std::vector) is built: rb_raise jumps over C++ destructors, so raising
+ * after building one would leak it. */
+static void checkString(VALUE v, int pos)
 {
     if (!RB_TYPE_P(v, RUBY_T_STRING))
         rb_raise(rb_eTypeError, "Argument %d: Expected string", pos);
+}
 
+static void checkFloat(VALUE v, int pos)
+{
+    if (!RB_FLOAT_TYPE_P(v) && !RB_INTEGER_TYPE_P(v))
+        rb_raise(rb_eTypeError, "Argument %d: Expected float", pos);
+}
+
+/* Only after checkString / checkFloat: these cannot raise */
+static std::string toString(VALUE v)
+{
     return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
 }
 
-static float floatArg(VALUE v, int pos)
+static float toFloat(VALUE v)
 {
-    double d;
-    rb_float_arg(v, &d, pos);
+    return (float) NUM2DBL(v);
+}
 
-    return (float) d;
+/* getPrivateData raises on an object without data: read the pointer itself */
+static CustomShader *rawData(VALUE self)
+{
+#if RAPI_FULL > 187
+    return static_cast<CustomShader *>(RTYPEDDATA_DATA(self));
+#else
+    return static_cast<CustomShader *>(DATA_PTR(self));
+#endif
+}
+
+static CustomShader *shaderData(VALUE self)
+{
+    CustomShader *s = rawData(self);
+    if (!s)
+        rb_raise(rb_eRuntimeError, "uninitialized shader");
+
+    return s;
+}
+
+/* Calls f() under the graphics lock and turns a C++ Exception into a
+ * Ruby one once every C++ object of this frame is gone. */
+template<typename F>
+static void guarded(F f)
+{
+    VALUE excClass = Qnil, msg = Qnil;
+
+    GFX_LOCK;
+    try {
+        f();
+    } catch (const Exception &exc) {
+        excClass = getRbData()->exc[MKXP];
+        msg = rb_str_new_cstr(exc.msg.c_str());   /* msg is padded with NULs */
+    }
+    GFX_UNLOCK;
+
+    if (!NIL_P(msg))
+        rb_exc_raise(rb_exc_new_str(excClass, msg));
 }
 
 RB_METHOD(shaderInitialize) {
     if (argc != 1)
         rb_raise(rb_eArgError, "wrong number of arguments (%d for 1)", argc);
+    checkString(argv[0], 0);
+    if (rawData(self))
+        rb_raise(rb_eRuntimeError, "shader already initialized");
 
-    std::string source = stringArg(argv[0], 0);
-
+    VALUE src = argv[0];
     CustomShader *s = 0;
-    GFX_GUARD_EXC(s = new CustomShader(source);)
+    guarded([&] { s = new CustomShader(toString(src)); });
 
     setPrivateData(self, s);
     rb_iv_set(self, "textures", rb_hash_new());
@@ -81,14 +142,18 @@ RB_METHOD(shaderSetFloat) {
     if (argc < 2 || argc > 5)
         rb_raise(rb_eArgError, "set_float(name, value[, value, value, value])");
 
-    CustomShader *s = getPrivateData<CustomShader>(self);
-    std::string name = stringArg(argv[0], 0);
+    CustomShader *s = shaderData(self);
+    checkString(argv[0], 0);
+    for (int i = 1; i < argc; ++i)
+        checkFloat(argv[i], i);
 
     float values[4];
     for (int i = 1; i < argc; ++i)
-        values[i - 1] = floatArg(argv[i], i);
+        values[i - 1] = toFloat(argv[i]);
 
-    GFX_GUARD_EXC(s->setFloats(name, argc - 1, 1, values);)
+    VALUE name = argv[0];
+    int count = argc - 1;
+    guarded([&] { s->setFloats(toString(name), count, 1, values); });
 
     return self;
 }
@@ -97,8 +162,8 @@ RB_METHOD(shaderSetArray) {
     if (argc != 3)
         rb_raise(rb_eArgError, "set_array(name, components, values)");
 
-    CustomShader *s = getPrivateData<CustomShader>(self);
-    std::string name = stringArg(argv[0], 0);
+    CustomShader *s = shaderData(self);
+    checkString(argv[0], 0);
 
     int comps;
     rb_int_arg(argv[1], &comps, 1);
@@ -113,11 +178,16 @@ RB_METHOD(shaderSetArray) {
     if (len == 0 || len % comps != 0 || len > MAX_ARRAY_FLOATS)
         rb_raise(rb_eArgError, "values must hold a multiple of components, at most %d floats", MAX_ARRAY_FLOATS);
 
-    std::vector<float> values(len);
+    float values[MAX_ARRAY_FLOATS];
     for (long i = 0; i < len; ++i)
-        values[i] = floatArg(rb_ary_entry(ary, i), 2);
+    {
+        VALUE v = rb_ary_entry(ary, i);
+        checkFloat(v, 2);
+        values[i] = toFloat(v);
+    }
 
-    GFX_GUARD_EXC(s->setFloats(name, comps, (int) (len / comps), &values[0]);)
+    VALUE name = argv[0];
+    guarded([&] { s->setFloats(toString(name), comps, (int) (len / comps), values); });
 
     return self;
 }
@@ -126,14 +196,23 @@ RB_METHOD(shaderSetTexture) {
     if (argc != 2)
         rb_raise(rb_eArgError, "set_texture(name, bitmap)");
 
-    CustomShader *s = getPrivateData<CustomShader>(self);
-    std::string name = stringArg(argv[0], 0);
+    CustomShader *s = shaderData(self);
+    checkString(argv[0], 0);
 
     Bitmap *b = 0;
     if (!NIL_P(argv[1]))
+    {
         b = getPrivateDataCheck<Bitmap>(argv[1], BitmapType);
+        if (!b)
+            rb_raise(rb_eArgError, "Argument 1: uninitialized bitmap");
+        if (b->isDisposed())
+            rb_raise(getRbData()->exc[RGSS], "disposed bitmap");
+        if (b->isMega())
+            rb_raise(rb_eArgError, "Argument 1: bitmap too large for a texture");
+    }
 
-    GFX_GUARD_EXC(s->setTexture(name, b);)
+    VALUE name = argv[0];
+    guarded([&] { s->setTexture(toString(name), b); });
 
     /* Keep the bitmap alive as long as the shader uses it */
     VALUE textures = rb_iv_get(self, "textures");

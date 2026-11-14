@@ -19,6 +19,24 @@ The fragment stage receives `uniform sampler2D texture`, `varying vec2 v_texCoor
 `uniform vec2 size` (texture size in pixels), `uniform float opacity`,
 `uniform vec4 tone` and `uniform vec4 color` (sprite values, normalized).
 
+`v_pos` is a pixel of the drawn texture: for a viewport shader, the screen
+(the viewport rectangle in screen pixels); for a sprite shader, the sprite's
+bitmap (its source rectangle, before position, zoom, angle and mirror).
+
+Extra textures (`set_texture`) are read without filtering or repeat (nearest,
+clamped); a removed or disposed bitmap reads as black. A mega bitmap (larger
+than a GL texture) is refused.
+
+A sprite drawn through a shader skips the engine's own sprite effects that are
+not passed as uniforms: `bush_depth`, `bush_opacity`, `invert` and `pattern`.
+A viewport shader draws with blending off: its output alpha is written as is
+(keep `src.a`). `set_array` with fewer values than before leaves the rest of the
+uniform array as it was: bound loops by a count uniform.
+
+GLSL: no `#version` (desktop GLSL 1.10, GLSL ES 1.00 on ES). On desktop the
+engine defines `highp`, `mediump` and `lowp` as empty, so a `precision`
+statement must be guarded by `#ifdef GLSLES`, the define the engine sets on ES.
+
 A viewport shader runs after the viewport's children are drawn and before its
 tone, color and flash. It reuses the ping-pong path of the gray tone, clipped to
 the viewport rectangle, so windows and sprites drawn later are not affected.
