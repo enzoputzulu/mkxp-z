@@ -37,7 +37,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: actions/cache@v4
+      # Le cache des dépendances est enregistré dès qu'elles sont construites, même si l'exe échoue ensuite.
+      - uses: actions/cache/restore@v4
+        id: deps-cache
         with:
           path: |
             windows/build-mingw64
@@ -45,15 +47,26 @@ jobs:
           key: win-${{ hashFiles('windows/Makefile') }}
 
       - name: Build all dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
         run: |
           cd windows
           make
 
+      - uses: actions/cache/save@v4
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            windows/build-mingw64
+            windows/downloads
+          key: win-${{ hashFiles('windows/Makefile') }}
+
       - name: Build exe
         shell: msys2 {0}
         run: |
           source windows/vars.sh
+          # GCC 13 et plus n'incluent plus <cstdint> par ricochet
+          export CXXFLAGS="-include cstdint"
           meson build
           cd build
           ninja
