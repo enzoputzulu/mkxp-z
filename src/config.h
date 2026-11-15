@@ -56,6 +56,13 @@ struct Config {
     double textureScalingFactor;
     double framebufferScalingFactor;
     double atlasScalingFactor;
+    /* High-res mode: when both are set, the texture and framebuffer scaling
+     * factors are chosen at launch from the screen (the smallest whole
+     * factor at which a game of this size covers the screen, at most
+     * hiresAutoMax) */
+    int hiresAutoWidth;
+    int hiresAutoHeight;
+    int hiresAutoMax;
     bool vsync;
     
     int defScreenW;

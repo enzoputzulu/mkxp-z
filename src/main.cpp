@@ -34,6 +34,8 @@
 #include <SDL_ttf.h>
 
 #include <cassert>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <unistd.h>
@@ -677,6 +679,21 @@ int main(int argc, char *argv[]) {
     /* Can't sync to display refresh rate if its value is unknown */
     if (!mode.refresh_rate)
       conf.syncToRefreshrate = false;
+
+    /* High-res mode: scaling factors chosen from the screen the window is on */
+    if (conf.enableHires && conf.hiresAutoWidth > 0 && conf.hiresAutoHeight > 0) {
+      SDL_DisplayMode desk;
+      int disp = SDL_GetWindowDisplayIndex(win);
+      if (SDL_GetDesktopDisplayMode(disp < 0 ? 0 : disp, &desk) == 0 && desk.w > 0 && desk.h > 0) {
+        double fit = std::min((double)desk.w / conf.hiresAutoWidth,
+                              (double)desk.h / conf.hiresAutoHeight);
+        int factor = (int)std::ceil(fit - 0.01);
+        factor = std::max(1, std::min(factor, std::max(1, conf.hiresAutoMax)));
+        conf.textureScalingFactor = factor;
+        conf.framebufferScalingFactor = factor;
+        Debug() << "High-res factor" << factor << "for a" << desk.w << "x" << desk.h << "screen";
+      }
+    }
 
     EventThread eventThread;
 
