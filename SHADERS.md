@@ -37,6 +37,10 @@ The vertex stage already declares `projMat`, `spriteMat`, `texSizeInv`,
 fragment shader (on OpenGL ES, including ANGLE on Windows, a precision
 mismatch fails the link).
 
+`hiresAutoWidth` and `hiresAutoHeight` (the game's resolution) let the engine
+pick both scaling factors at launch from the screen: the smallest whole factor
+at which the game covers it, at most `hiresAutoMax` (4 by default).
+
 Extra textures (`set_texture`) are read without filtering or repeat (nearest,
 clamped); a removed or disposed bitmap reads as black. A mega bitmap (larger
 than a GL texture) is refused.
