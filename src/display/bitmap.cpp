@@ -576,7 +576,12 @@ Bitmap::Bitmap(const char *filename)
         }
         catch (const Exception &e)
         {
-            Debug() << "No high-res Bitmap found at" << hiresFilename;
+            /* Normal case for a game that only draws its text and shapes
+             * in high resolution: say it once, not for every image */
+            static bool told = false;
+            if (!told)
+                Debug() << "No high-res Bitmap found at" << hiresFilename << "(further misses not reported)";
+            told = true;
             hiresBitmap = nullptr;
         }
     }
