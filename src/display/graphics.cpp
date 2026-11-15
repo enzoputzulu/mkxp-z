@@ -566,20 +566,32 @@ public:
         if (!viewpRect.encloses(screenRect)) {
             glState.scissorTest.pushSet(false);
             
-            GLMeta::blitBegin(pp.frontBuffer());
-            GLMeta::blitSource(pp.backBuffer());
+            int scaleIsSpecial = GLMeta::blitScaleIsSpecial(pp.frontBuffer(), false, geometry.rect, pp.backBuffer(), geometry.rect);
+            
+            GLMeta::blitBegin(pp.frontBuffer(), false, scaleIsSpecial);
+            GLMeta::blitSource(pp.backBuffer(), scaleIsSpecial);
             GLMeta::blitRectangle(geometry.rect, Vec2i());
             GLMeta::blitEnd();
             
             glState.scissorTest.pop();
         }
         
+        /* High-res mode: the screen texture is larger than the game screen.
+         * The pass draws it with a projection in its own pixels, while
+         * v_pos, size and gl_FragCoord (through fragScale) stay in game
+         * pixels, so game shaders work the same with or without it */
+        const Vec2 game((float)shState->graphics().width(), (float)shState->graphics().height());
+        const Vec2 scale(game.x / screenRect.w, game.y / screenRect.h);
+        
+        shader.setViewportPass(true);
         shader.bind();
         shader.applyViewportProj();
         shader.setTexSize(screenRect.size());
         shader.setTranslation(Vec2i());
         shader.setIdentitySpriteMat();
-        shader.setSize(Vec2(screenRect.w, screenRect.h));
+        shader.setSize(game);
+        shader.setPosScale(scale);
+        shader.setFragScale(scale.x);
         shader.setSpriteEffects(1.0f, Vec4(), Vec4());
         shader.applyValues();
         
@@ -1759,7 +1771,8 @@ void Graphics::setThreadsafe(bool value)
 
 double Graphics::getScale() const {
     p->checkResize();
-    return (double)(p->winSize.y / p->backingScaleFactor) / p->scRes.y;
+    /* In game pixels, so that a high-res screen keeps the same scale */
+    return (double)(p->winSize.y / p->backingScaleFactor) / p->scResLores.y;
     
 }
 
@@ -1770,8 +1783,8 @@ void Graphics::setScale(double factor) {
     if (factor == getScale())
         return;
     
-    int widthpx = p->scRes.x * factor;
-    int heightpx = p->scRes.y * factor;
+    int widthpx = p->scResLores.x * factor;
+    int heightpx = p->scResLores.y * factor;
     
     shState->eThread().requestWindowResize(widthpx, heightpx);
 }

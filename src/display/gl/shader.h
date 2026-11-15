@@ -474,6 +474,14 @@ public:
 	void setSize(const Vec2 &value);
 	void setSpriteEffects(float opacity, const Vec4 &tone, const Vec4 &color);
 
+	/* High-res mode (enableHires). A viewport pass draws the high-res
+	 * screen texture with a high-res projection; a sprite keeps the game's
+	 * projection. 'posScale' turns texture pixels into game pixels for
+	 * v_pos, 'fragScale' gl_FragCoord pixels into game pixels. */
+	void setViewportPass(bool value);
+	void setPosScale(const Vec2 &value);
+	void setFragScale(float value);
+
 	/* Upload stored values and bind extra textures (shader must be bound) */
 	void applyValues();
 
@@ -497,7 +505,11 @@ private:
 	std::map<std::string, Value> values;
 	std::map<std::string, Texture> textures;
 
-	GLint u_spriteMat, u_size, u_opacity, u_tone, u_color;
+	GLint u_spriteMat, u_size, u_opacity, u_tone, u_color, u_posScale, u_fragScale;
+	bool viewportPass;
+
+protected:
+	bool framebufferScalingAllowed();
 };
 
 /* Global object containing all available shaders */

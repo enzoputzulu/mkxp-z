@@ -1025,8 +1025,15 @@ void Sprite::draw()
         if (scalingMethod != NearestNeighbor && scalingMethod != Bilinear)
             scalingMethod = NearestNeighbor;
         
+        /* High-res mode: the sprite keeps the game's projection; only
+         * gl_FragCoord counts screen texture pixels (see fragScale) */
+        const double fbScale = shState->config().enableHires ? shState->config().framebufferScalingFactor : 1.0;
+        
+        shader.setViewportPass(false);
         shader.bind();
         shader.applyViewportProj();
+        shader.setPosScale(Vec2(1, 1));
+        shader.setFragScale((float)(1.0 / fbScale));
         shader.setSpriteMat(p->trans.getMatrix());
         shader.setTranslation(Vec2i());
         shader.setSize(Vec2(p->bitmap->width(), p->bitmap->height()));

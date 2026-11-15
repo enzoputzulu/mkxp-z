@@ -1000,6 +1000,7 @@ static const char customVert[] =
 	"uniform mat4 spriteMat;\n"
 	"uniform vec2 texSizeInv;\n"
 	"uniform vec2 translation;\n"
+	"uniform vec2 posScale;\n"
 	"attribute vec2 position;\n"
 	"attribute vec2 texCoord;\n"
 	"varying vec2 v_texCoord;\n"
@@ -1008,10 +1009,11 @@ static const char customVert[] =
 	"{\n"
 	"	gl_Position = projMat * spriteMat * vec4(position + translation, 0, 1);\n"
 	"	v_texCoord = texCoord * texSizeInv;\n"
-	"	v_pos = texCoord;\n"
+	"	v_pos = texCoord * posScale;\n"
 	"}\n";
 
 CustomShader::CustomShader(const std::string &fragSource)
+	: viewportPass(false)
 {
 	Shader::init((const unsigned char*) customVert, sizeof(customVert) - 1,
 	             (const unsigned char*) fragSource.c_str(), fragSource.size(),
@@ -1024,6 +1026,30 @@ CustomShader::CustomShader(const std::string &fragSource)
 	GET_U(opacity);
 	GET_U(tone);
 	GET_U(color);
+	GET_U(posScale);
+	GET_U(fragScale);
+}
+
+void CustomShader::setViewportPass(bool value)
+{
+	viewportPass = value;
+}
+
+bool CustomShader::framebufferScalingAllowed()
+{
+	return !viewportPass;
+}
+
+void CustomShader::setPosScale(const Vec2 &value)
+{
+	if (u_posScale >= 0)
+		setVec2Uniform(u_posScale, value);
+}
+
+void CustomShader::setFragScale(float value)
+{
+	if (u_fragScale >= 0)
+		gl.Uniform1f(u_fragScale, value);
 }
 
 void CustomShader::setFloats(const std::string &name, int comps, int count, const float *values_)
@@ -1124,6 +1150,11 @@ void CustomShader::applyValues()
 		/* Removed or disposed bitmap: texture 0 (samples black), never a
 		 * stale texture that the pool may have handed to another bitmap */
 		bool usable = t.bitmap && !t.bitmap->isDisposed() && !t.bitmap->isMega();
-		setTexUniform(t.loc, unit++, usable ? t.bitmap->getGLTypes().tex : TEX::ID(0));
+		/* High-res mode: drawing on a bitmap goes to its high-res twin,
+		 * so that is the texture holding the current pixels */
+		Bitmap *src = (usable && t.bitmap->hasHires()) ? t.bitmap->getHires() : t.bitmap;
+		if (usable && src != t.bitmap && src->isMega())
+			src = t.bitmap;
+		setTexUniform(t.loc, unit++, usable ? src->getGLTypes().tex : TEX::ID(0));
 	}
 }

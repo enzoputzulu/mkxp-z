@@ -23,6 +23,15 @@ The fragment stage receives `uniform sampler2D texture`, `varying vec2 v_texCoor
 (the viewport rectangle in screen pixels); for a sprite shader, the sprite's
 bitmap (its source rectangle, before position, zoom, angle and mirror).
 
+High-res mode (`enableHires` with `framebufferScalingFactor`): the screen
+texture is larger than the game screen, and a bitmap drawn by the game has a
+high-res twin. `v_pos` and `size` stay in game pixels in both kinds of
+shaders, so a shader written for game pixels works unchanged. `gl_FragCoord`
+counts screen texture pixels: declare `uniform float fragScale` and use
+`gl_FragCoord.xy * fragScale` for game pixels (1 without high-res mode). An
+extra texture with a high-res twin is read from the twin, which holds what
+was drawn on it.
+
 Extra textures (`set_texture`) are read without filtering or repeat (nearest,
 clamped); a removed or disposed bitmap reads as black. A mega bitmap (larger
 than a GL texture) is refused.
