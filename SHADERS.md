@@ -1,7 +1,7 @@
 # Game shaders (fork for "Au nom de demain")
 
-This branch (`and-shaders`) is mkxp-z at revision c9378cf, the build shipped with
-Pokémon Essentials v21.1, plus a small API that lets the game run its own GLSL
+This branch is upstream mkxp-z (revision f02d586, with high-res mode), plus a
+small API that lets the game run its own GLSL
 fragment shaders. Nothing else changes: without a shader set, rendering is identical.
 
 ```ruby
@@ -31,6 +31,11 @@ counts screen texture pixels: declare `uniform float fragScale` and use
 `gl_FragCoord.xy * fragScale` for game pixels (1 without high-res mode). An
 extra texture with a high-res twin is read from the twin, which holds what
 was drawn on it.
+
+The vertex stage already declares `projMat`, `spriteMat`, `texSizeInv`,
+`translation` and `posScale` at high precision: do not reuse these names in a
+fragment shader (on OpenGL ES, including ANGLE on Windows, a precision
+mismatch fails the link).
 
 Extra textures (`set_texture`) are read without filtering or repeat (nearest,
 clamped); a removed or disposed bitmap reads as black. A mega bitmap (larger

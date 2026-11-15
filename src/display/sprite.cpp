@@ -1025,14 +1025,24 @@ void Sprite::draw()
         if (scalingMethod != NearestNeighbor && scalingMethod != Bilinear)
             scalingMethod = NearestNeighbor;
         
-        /* High-res mode: the sprite keeps the game's projection; only
-         * gl_FragCoord counts screen texture pixels (see fragScale) */
+        /* High-res mode: the sprite keeps the game's projection for its
+         * positions, but its texture coordinates count the twin's pixels
+         * (posScale brings v_pos back to game pixels), and gl_FragCoord
+         * counts screen texture pixels (see fragScale) */
         const double fbScale = shState->config().enableHires ? shState->config().framebufferScalingFactor : 1.0;
+        Vec2 posScale(1, 1);
+        if (p->bitmap->hasHires())
+        {
+            Bitmap *twin = p->bitmap->getHires();
+            if (twin->width() > 0 && twin->height() > 0)
+                posScale = Vec2((float)p->bitmap->width() / twin->width(),
+                                (float)p->bitmap->height() / twin->height());
+        }
         
         shader.setViewportPass(false);
         shader.bind();
         shader.applyViewportProj();
-        shader.setPosScale(Vec2(1, 1));
+        shader.setPosScale(posScale);
         shader.setFragScale((float)(1.0 / fbScale));
         shader.setSpriteMat(p->trans.getMatrix());
         shader.setTranslation(Vec2i());

@@ -1153,7 +1153,7 @@ void CustomShader::applyValues()
 		/* High-res mode: drawing on a bitmap goes to its high-res twin,
 		 * so that is the texture holding the current pixels */
 		Bitmap *src = (usable && t.bitmap->hasHires()) ? t.bitmap->getHires() : t.bitmap;
-		if (usable && src != t.bitmap && src->isMega())
+		if (usable && src != t.bitmap && (src->isDisposed() || src->isMega()))
 			src = t.bitmap;
 		setTexUniform(t.loc, unit++, usable ? src->getGLTypes().tex : TEX::ID(0));
 	}
